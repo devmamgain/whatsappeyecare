@@ -54,8 +54,44 @@ function sendButtons(to, body, buttons) {
   });
 }
 
+/**
+ * A tap-to-choose menu. WhatsApp limits: 10 rows in total, row title 24 chars, row description
+ * 72 chars, button text 20 chars. Rows are { id, title, description? }.
+ */
+function sendList(to, { body, buttonText, sectionTitle, rows }) {
+  return post({
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: body },
+      action: { button: buttonText, sections: [{ title: sectionTitle, rows }] },
+    },
+  });
+}
+
 function markAsRead(messageId) {
   return post({ status: 'read', message_id: messageId });
 }
 
-module.exports = { sendText, sendButtons, markAsRead };
+/**
+ * Send an approved message template (works outside the 24-hour window).
+ * `bodyParams` fill the {{1}}, {{2}}... placeholders in the template body, in order.
+ */
+function sendTemplate(to, name, languageCode, bodyParams = []) {
+  // Template parameters may not contain newlines/tabs or long runs of spaces.
+  const clean = (v) => String(v).replace(/[\n\r\t]+/g, ' ').replace(/ {5,}/g, '    ').trim() || '-';
+  return post({
+    to,
+    type: 'template',
+    template: {
+      name,
+      language: { code: languageCode },
+      components: bodyParams.length
+        ? [{ type: 'body', parameters: bodyParams.map((p) => ({ type: 'text', text: clean(p) })) }]
+        : [],
+    },
+  });
+}
+
+module.exports = { sendText, sendButtons, sendList, sendTemplate, markAsRead };

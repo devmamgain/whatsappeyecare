@@ -8,9 +8,6 @@ const {
 
 const firstName = (name) => String(name || '').split(' ')[0];
 
-const hoursText = (rules) =>
-  `${formatWorkingDays(rules.workingDays)}, ${formatHour(rules.openHour)} – ${formatHour(rules.closeHour)}`;
-
 module.exports = {
   confirmButtons: [
     { id: ACTIONS.CONFIRM, title: '✅ Confirm' },
@@ -30,9 +27,15 @@ module.exports = {
   invalidName: () =>
     'Sorry, I couldn\'t read that as a name. Please send your *full name* using letters only (e.g. *Priya Sharma*).',
 
-  askDate: (name) =>
-    `Thanks${name ? `, ${firstName(name)}` : ''}! 📅 What *date* would you like to book?\n\n` +
-    `Send a date like *25/11/2026*, or type *today* / *tomorrow*.`,
+  chooseDate: (name) =>
+    `Thanks${name ? `, ${firstName(name)}` : ''}! 📅 Please choose a *date*.\n` +
+    `Tap the button below to see the days that still have free slots.\n\n` +
+    `You can also type a date like *25/11/2026*.`,
+  dateListButton: 'Choose date',
+  dateListTitle: 'Available dates',
+  noAvailability: () =>
+    'Sorry, we have no free appointment slots at the moment. Please try again later or contact us directly.',
+  dayFull: (date) => `Sorry, *${formatDisplayDate(date)}* is fully booked. Please pick another day.\n\n`,
 
   dateError: (reason, rules) => {
     switch (reason) {
@@ -45,14 +48,19 @@ module.exports = {
       case 'today_over':
         return 'There are no slots left today. Please choose tomorrow or a later date.';
       default:
-        return 'I couldn\'t understand that date. Please use *DD/MM/YYYY* (e.g. *25/11/2026*), or type *today* / *tomorrow*.';
+        return 'I couldn\'t understand that date. Please tap *Choose date* on the menu above, or type a date like *25/11/2026*.';
     }
   },
 
-  askTime: (date, rules) =>
-    `🕐 What *time* would you prefer on *${formatDisplayDate(date)}*?\n\n` +
-    `We're open ${hoursText(rules)}, with ${rules.slotMinutes}-minute slots.\n` +
-    `Example: *10:30 AM* or *14:00*.`,
+  chooseTime: (date) =>
+    `🕐 Now choose a *time* on *${formatDisplayDate(date)}*.\n` +
+    `Tap the button below to see the free slots.\n\n` +
+    `You can also type a time like *10:30 AM*.`,
+  timeListButton: 'Choose time',
+  timeListTitle: 'Free time slots',
+  slotFull: () => 'Sorry, that time is already booked. Please pick another slot.\n\n',
+  slotJustTaken: () => "Sorry, that slot was just taken by someone else. Let's pick another.\n\n",
+  staleMenu: () => "That menu is out of date, so let's continue from here.\n\n",
 
   timeError: (reason, rules) => {
     switch (reason) {
@@ -63,7 +71,7 @@ module.exports = {
       case 'past_time':
         return 'That time has already passed today. Please choose a later time.';
       default:
-        return 'I couldn\'t understand that time. Please send something like *10:30 AM* or *14:00*.';
+        return 'I couldn\'t understand that time. Please tap *Choose time* on the menu above, or type a time like *10:30 AM*.';
     }
   },
 
@@ -100,5 +108,15 @@ module.exports = {
   nothingToCancel: () => 'There\'s no booking in progress. Send *hi* to start a new one.',
   midFlowGreeting: () => 'Welcome back! We\'re in the middle of your booking, so let\'s continue. (Type *restart* to start over.)\n\n',
   unsupportedType: () => 'Sorry, I can only read text messages. Please reply with text.\n\n',
+  // Sent by the dashboard when staff confirm a booking.
+  appointmentConfirmed: ({ company, reference, name, date, time, doctor }) =>
+    `✅ *Your appointment is confirmed!*\n\n` +
+    `🏥 ${company}\n` +
+    `Reference: *${reference}*\n` +
+    `👤 ${name}\n` +
+    `📅 ${formatDisplayDate(date)} at ${formatDisplayTime(time)}\n` +
+    (doctor ? `🩺 Doctor: ${doctor}\n` : '') +
+    `\nPlease arrive a few minutes early. To book another appointment, just send us a message.`,
+
   genericError: () => 'Sorry, something went wrong on our side. Please try again in a moment.',
 };

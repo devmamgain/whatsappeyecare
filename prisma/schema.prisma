@@ -57,6 +57,9 @@ model Appointment {
   appointmentTime String            @db.VarChar(5) // "HH:mm", 24-hour, business timezone
   notes           String?
   status          AppointmentStatus @default(PENDING)
+  confirmedAt       DateTime? // when staff confirmed it on the dashboard
+  notifiedAt        DateTime? // when the client was sent the "confirmed" WhatsApp message
+  notificationError String? // last notification failure, shown on the dashboard
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 

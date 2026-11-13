@@ -36,4 +36,14 @@ function formatWorkingDays(days) {
   return sorted.map((d) => DAY_NAMES[d]).join(', ');
 }
 
-module.exports = { formatDisplayDate, formatDisplayTime, formatHour, formatWorkingDays };
+/** "2026-11-16" -> "Mon 16 Nov" (short enough for a list row title) */
+function formatShortDate(iso) {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+module.exports = { formatDisplayDate, formatShortDate, formatDisplayTime, formatHour, formatWorkingDays };

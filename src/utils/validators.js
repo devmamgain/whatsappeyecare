@@ -150,6 +150,9 @@ function validateTime(input, rules, { date, now = new Date() } = {}) {
   return { valid: true, value: `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}` };
 }
 
+/** "YYYY-MM-DD" -> Date at UTC midnight (stored in a Postgres DATE column). */
+const toDbDate = (iso) => new Date(`${iso}T00:00:00.000Z`);
+
 module.exports = {
   validateName,
   validateDate,
@@ -157,5 +160,7 @@ module.exports = {
   parseDateInput,
   parseTimeInput,
   todayInTimezone,
+  minutesNowInTimezone,
   addDays,
+  toDbDate,
 };

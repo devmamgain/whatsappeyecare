@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Appointments</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Appointments</h1>
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab active" type="button" data-tab="appointments">Appointments</button>
+      <button class="tab" type="button" data-tab="doctors">Doctors</button>
+    </nav>
+    <button id="logout" class="btn ghost" type="button">Sign out</button>
+  </header>
+
+  <main>
+    <section id="tab-appointments" aria-label="Appointments">
+      <div class="stats">
+        <div class="stat"><span class="stat-value" id="stat-pending">–</span><span class="stat-label">Awaiting confirmation</span></div>
+        <div class="stat"><span class="stat-value" id="stat-confirmed">–</span><span class="stat-label">Upcoming confirmed</span></div>
+        <div class="stat"><span class="stat-value" id="stat-today">–</span><span class="stat-label">Today</span></div>
+      </div>
+
+      <div class="filters">
+        <div class="segmented" id="status-filter" role="group" aria-label="Status">
+          <button type="button" class="seg active" data-status="">All</button>
+          <button type="button" class="seg" data-status="PENDING">Pending</button>
+          <button type="button" class="seg" data-status="CONFIRMED">Confirmed</button>
+          <button type="button" class="seg" data-status="CANCELLED">Cancelled</button>
+        </div>
+        <select id="when" aria-label="Date range">
+          <option value="upcoming">Upcoming</option>
+          <option value="today">Today</option>
+          <option value="past">Past</option>
+          <option value="all">All dates</option>
+        </select>
+        <input id="search" type="search" placeholder="Search name or phone" aria-label="Search by name or phone">
+        <button id="refresh" class="btn ghost" type="button">Refresh</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>When</th><th>Client</th><th>Notes</th><th>Doctor</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p id="empty" class="empty" hidden>No appointments match these filters.</p>
+      </div>
+    </section>
+
+    <section id="tab-doctors" aria-label="Doctors" hidden>
+      <form id="doctor-form" class="doctor-form">
+        <label>Name
+          <input id="doctor-name" required minlength="2" maxlength="100" placeholder="Dr. Anita Verma">
+        </label>
+        <label>Specialization (optional)
+          <input id="doctor-spec" maxlength="100" placeholder="General Physician">
+        </label>
+        <button class="btn primary" type="submit">Add doctor</button>
+      </form>
+      <ul id="doctor-list" class="doctor-list"></ul>
+      <p id="doctors-empty" class="empty" hidden>No doctors yet. Add one above to start assigning appointments.</p>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/admin/assets/dashboard.js"></script>
+</body>
+</html>

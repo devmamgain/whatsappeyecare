@@ -4,15 +4,26 @@ const logger = require('../config/logger');
 const whatsapp = require('../services/whatsapp.service');
 const conversations = require('../services/conversation.service');
 const bookings = require('../services/booking.service');
-const { DuplicateAppointmentError } = require('../utils/errors');
+const availability = require('../services/availability.service');
+const { DuplicateAppointmentError, SlotFullError } = require('../utils/errors');
 const { toPhone, maskPhone } = require('../utils/phone');
 const { validateName, validateDate, validateTime } = require('../utils/validators');
+const { paginate } = require('../utils/slots');
+const { formatShortDate, formatDisplayTime } = require('../utils/format');
 const intents = require('./intents');
 const msg = require('./messages');
-const { ACTIONS } = require('./constants');
+const { ACTIONS, LIST } = require('./constants');
 
 const rules = config.booking;
 const MAX_NOTES_LENGTH = 500;
+
+// Which conversation step each list-menu row belongs to (used to ignore taps on old menus).
+const LIST_OWNER = {
+  [LIST.DATE]: S.AWAITING_DATE,
+  [LIST.DATES_MORE]: S.AWAITING_DATE,
+  [LIST.TIME]: S.AWAITING_TIME,
+  [LIST.TIMES_MORE]: S.AWAITING_TIME,
+};
 
 // ---------------------------------------------------------------- entry point
 
@@ -85,13 +96,19 @@ async function route(ctx, session, input) {
     return repromptStep(ctx, session, msg.midFlowGreeting());
   }
 
+  // A tap on a date/time row from an earlier menu must not be mistaken for an answer to this step.
+  const listKind = actionId ? actionId.split(':')[0] : null;
+  if (listKind && Object.hasOwn(LIST_OWNER, listKind) && LIST_OWNER[listKind] !== session.state) {
+    return repromptStep(ctx, session, msg.staleMenu());
+  }
+
   switch (session.state) {
     case S.AWAITING_NAME:
       return handleName(ctx, session, text);
     case S.AWAITING_DATE:
-      return handleDate(ctx, session, text);
+      return handleDate(ctx, session, input);
     case S.AWAITING_TIME:
-      return handleTime(ctx, session, text);
+      return handleTime(ctx, session, input);
     case S.AWAITING_NOTES:
       return handleNotes(ctx, session, text);
     case S.AWAITING_CONFIRMATION:
@@ -121,21 +138,43 @@ async function handleName(ctx, session, text) {
 
   const data = { ...session.data, name: result.value };
   await conversations.save(ctx.phone, { state: S.AWAITING_DATE, data });
-  return sendText(ctx, msg.askDate(data.name));
+  return promptDate(ctx, data);
 }
 
-async function handleDate(ctx, session, text) {
-  const result = validateDate(text, rules);
+async function handleDate(ctx, session, { text, actionId }) {
+  if (actionId?.startsWith(`${LIST.DATES_MORE}:`)) {
+    return promptDate(ctx, session.data, { offset: offsetFrom(actionId) });
+  }
+
+  const raw = actionId?.startsWith(`${LIST.DATE}:`) ? valueFrom(actionId) : text;
+  const result = validateDate(raw, rules);
   if (!result.valid) return sendText(ctx, msg.dateError(result.reason, rules));
+
+  const slots = await availability.getFreeSlots(result.value);
+  if (slots.length === 0) {
+    return promptDate(ctx, session.data, { prefix: msg.dayFull(result.value) });
+  }
 
   const data = { ...session.data, date: result.value };
   await conversations.save(ctx.phone, { state: S.AWAITING_TIME, data });
-  return sendText(ctx, msg.askTime(data.date, rules));
+  return promptTime(ctx, data);
 }
 
-async function handleTime(ctx, session, text) {
-  const result = validateTime(text, rules, { date: session.data.date });
+async function handleTime(ctx, session, { text, actionId }) {
+  const { date } = session.data;
+
+  if (actionId?.startsWith(`${LIST.TIMES_MORE}:`)) {
+    return promptTime(ctx, session.data, { offset: offsetFrom(actionId) });
+  }
+
+  const raw = actionId?.startsWith(`${LIST.TIME}:`) ? valueFrom(actionId) : text;
+  const result = validateTime(raw, rules, { date });
   if (!result.valid) return sendText(ctx, msg.timeError(result.reason, rules));
+
+  const slots = await availability.getFreeSlots(date);
+  if (!slots.some((slot) => slot.time === result.value)) {
+    return promptTime(ctx, session.data, { prefix: msg.slotFull() });
+  }
 
   const data = { ...session.data, time: result.value };
   await conversations.save(ctx.phone, { state: S.AWAITING_NOTES, data });
@@ -176,8 +215,7 @@ async function confirmBooking(ctx, session) {
   const dateCheck = validateDate(date, rules);
   const timeCheck = dateCheck.valid ? validateTime(time, rules, { date }) : null;
   if (!dateCheck.valid || !timeCheck.valid) {
-    await conversations.save(ctx.phone, { state: S.AWAITING_DATE, data: { name } });
-    return sendText(ctx, msg.slotNoLongerAvailable() + msg.askDate(name));
+    return backToDatePicker(ctx, name, msg.slotNoLongerAvailable());
   }
 
   try {
@@ -193,8 +231,71 @@ async function confirmBooking(ctx, session) {
       await conversations.reset(ctx.phone);
       return sendText(ctx, msg.duplicateBooking());
     }
+    if (err instanceof SlotFullError) {
+      ctx.log.info('Slot was taken before the client confirmed');
+      return backToDatePicker(ctx, name, msg.slotJustTaken());
+    }
     throw err; // generic error reply; state is kept so the user can tap Confirm again
   }
+}
+
+// ------------------------------------------------------- date / time menus
+
+async function backToDatePicker(ctx, name, prefix) {
+  const data = { name };
+  await conversations.save(ctx.phone, { state: S.AWAITING_DATE, data });
+  return promptDate(ctx, data, { prefix });
+}
+
+/** Tap-to-choose list of days that still have free slots (full and closed days are left out). */
+async function promptDate(ctx, data, { prefix = '', offset = 0 } = {}) {
+  const days = await availability.getAvailableDays();
+  if (days.length === 0) {
+    await conversations.reset(ctx.phone);
+    return sendText(ctx, prefix + msg.noAvailability());
+  }
+
+  const { page, nextOffset } = paginate(days, offset);
+  if (page.length === 0) return promptDate(ctx, data, { prefix }); // stale "More" tap: start over
+
+  const rows = page.map((day) => ({
+    id: `${LIST.DATE}:${day.date}`,
+    title: formatShortDate(day.date),
+    description: `${day.free} ${day.free === 1 ? 'time slot' : 'time slots'} free`,
+  }));
+  if (nextOffset !== null) {
+    rows.push({ id: `${LIST.DATES_MORE}:${nextOffset}`, title: 'More dates', description: 'Show later days' });
+  }
+
+  return whatsapp.sendList(ctx.waId, {
+    body: prefix + msg.chooseDate(data.name),
+    buttonText: msg.dateListButton,
+    sectionTitle: msg.dateListTitle,
+    rows,
+  });
+}
+
+/** Tap-to-choose list of the free time slots on the chosen day (booked slots are left out). */
+async function promptTime(ctx, data, { prefix = '', offset = 0 } = {}) {
+  const slots = await availability.getFreeSlots(data.date);
+  if (slots.length === 0) {
+    return backToDatePicker(ctx, data.name, prefix + msg.dayFull(data.date));
+  }
+
+  const { page, nextOffset } = paginate(slots, offset);
+  if (page.length === 0) return promptTime(ctx, data, { prefix }); // stale "More" tap: first page
+
+  const rows = page.map((slot) => ({ id: `${LIST.TIME}:${slot.time}`, title: formatDisplayTime(slot.time) }));
+  if (nextOffset !== null) {
+    rows.push({ id: `${LIST.TIMES_MORE}:${nextOffset}`, title: 'More times', description: 'Show later slots' });
+  }
+
+  return whatsapp.sendList(ctx.waId, {
+    body: prefix + msg.chooseTime(data.date),
+    buttonText: msg.timeListButton,
+    sectionTitle: msg.timeListTitle,
+    rows,
+  });
 }
 
 // -------------------------------------------------------------------- helpers
@@ -206,9 +307,9 @@ async function repromptStep(ctx, session, prefix = '') {
     case S.AWAITING_NAME:
       return sendText(ctx, prefix + msg.askName());
     case S.AWAITING_DATE:
-      return sendText(ctx, prefix + msg.askDate(data.name));
+      return promptDate(ctx, data, { prefix });
     case S.AWAITING_TIME:
-      return sendText(ctx, prefix + msg.askTime(data.date, rules));
+      return promptTime(ctx, data, { prefix });
     case S.AWAITING_NOTES:
       return sendText(ctx, prefix + msg.askNotes());
     case S.AWAITING_CONFIRMATION:
@@ -217,6 +318,10 @@ async function repromptStep(ctx, session, prefix = '') {
       return startBooking(ctx, '');
   }
 }
+
+/** "DATE:2026-11-16" / "TIME:10:30" -> everything after the first colon. */
+const valueFrom = (actionId) => actionId.slice(actionId.indexOf(':') + 1);
+const offsetFrom = (actionId) => Math.max(0, parseInt(valueFrom(actionId), 10) || 0);
 
 function sendSummary(ctx, data, prefix = '') {
   return whatsapp.sendButtons(ctx.waId, msg.summary({ ...data, phone: ctx.phone }, prefix), msg.confirmButtons);

@@ -24,6 +24,20 @@ const int = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+// The admin dashboard is only enabled when all three values are present.
+const adminUsername = process.env.ADMIN_USERNAME;
+const adminPassword = process.env.ADMIN_PASSWORD;
+const adminSecret = process.env.ADMIN_SESSION_SECRET;
+
+if (adminUsername && adminPassword) {
+  if (adminPassword.length < 10) {
+    throw new Error('ADMIN_PASSWORD must be at least 10 characters');
+  }
+  if (!adminSecret || adminSecret.length < 32) {
+    throw new Error('ADMIN_SESSION_SECRET must be a random string of at least 32 characters');
+  }
+}
+
 module.exports = {
   nodeEnv,
   isProduction,
@@ -37,6 +51,16 @@ module.exports = {
     verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
     appSecret: process.env.WHATSAPP_APP_SECRET || null,
     apiVersion: process.env.WHATSAPP_API_VERSION || 'v26.0',
+    // Approved template used to tell clients their booking is confirmed when the
+    // 24-hour free-form messaging window has closed (optional).
+    confirmTemplate: process.env.WHATSAPP_CONFIRM_TEMPLATE || null,
+    confirmTemplateLanguage: process.env.WHATSAPP_CONFIRM_TEMPLATE_LANG || 'en',
+  },
+  admin: {
+    enabled: Boolean(adminUsername && adminPassword && adminSecret),
+    username: adminUsername,
+    password: adminPassword,
+    sessionSecret: adminSecret,
   },
   booking: {
     timezone: process.env.BUSINESS_TIMEZONE || 'Asia/Kolkata',
@@ -48,6 +72,8 @@ module.exports = {
       .map((d) => parseInt(d.trim(), 10))
       .filter((d) => d >= 0 && d <= 6),
     maxAdvanceDays: int(process.env.MAX_ADVANCE_DAYS, 60),
+    // Bookings allowed per time slot. 0 (default) = one per active doctor, minimum 1.
+    slotCapacity: int(process.env.SLOT_CAPACITY, 0),
   },
   session: {
     timeoutMinutes: int(process.env.SESSION_TIMEOUT_MINUTES, 30),
