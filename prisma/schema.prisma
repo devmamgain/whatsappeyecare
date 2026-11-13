@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum ConversationState {
+  IDLE
+  AWAITING_NAME
+  AWAITING_DATE
+  AWAITING_TIME
+  AWAITING_NOTES
+  AWAITING_CONFIRMATION
+}
+
+model Client {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String   @unique // E.164 with leading "+", taken from the WhatsApp sender
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointments Appointment[]
+
+  @@map("clients")
+}
+
+model Doctor {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  specialization String?
+  phone          String?
+  email          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  appointments Appointment[]
+
+  @@map("doctors")
+}
+
+model Appointment {
+  id              String            @id @default(uuid()) @db.Uuid
+  clientId        String            @db.Uuid
+  doctorId        String?           @db.Uuid // assigned later by staff
+  appointmentDate DateTime          @db.Date // calendar date in the business timezone
+  appointmentTime String            @db.VarChar(5) // "HH:mm", 24-hour, business timezone
+  notes           String?
+  status          AppointmentStatus @default(PENDING)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  client Client  @relation(fields: [clientId], references: [id])
+  doctor Doctor? @relation(fields: [doctorId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([doctorId])
+  @@index([appointmentDate, appointmentTime])
+  @@map("appointments")
+}
+
+// Per-user conversation state so the bot remembers what it has collected.
+// Stored in Postgres so it survives restarts and works with multiple instances.
+model Conversation {
+  id            String            @id @default(uuid()) @db.Uuid
+  phone         String            @unique
+  state         ConversationState @default(IDLE)
+  data          Json              @default("{}")
+  lastMessageId String? // used to ignore duplicate webhook deliveries
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@map("conversations")
+}

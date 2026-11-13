@@ -1,0 +1,7 @@
+const ACTIONS = {
+  CONFIRM: 'CONFIRM_BOOKING',
+  RESTART: 'RESTART_BOOKING',
+  CANCEL: 'CANCEL_BOOKING',
+};
+
+module.exports = { ACTIONS };
